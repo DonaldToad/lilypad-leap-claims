@@ -1,8 +1,6 @@
 {
   "epochId": 1,
-  "amount": "1230000000000000000",
-  "generatedLoss": "450000000000000000",
-  "proof": [
-    "0xee858cde3e20013bda776d86390ddf85aeaf845cedc30b4c6446f01dda53d638"
-  ]
+  "amount": "0",
+  "generatedLoss": "0",
+  "proof": []
 }

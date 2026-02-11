@@ -5,12 +5,11 @@
  *  - epochs/<chainId>/<epochId>.json  (merkleRoot, totals, counts)
  *  - epochs/<chainId>/latest.json     (points to latest epoch + merkleRoot)
  *
- * Leaf hashing MUST match your Solidity contract.
- * This script uses:
+ * Leaf hashing:
  *   leaf = keccak256( abi.encodePacked(address, uint256 amount, uint256 generatedLoss) )
  *
- * If your contract uses abi.encode (not packed), or different ordering/types,
- * change `leafPacked()` accordingly.
+ * IMPORTANT:
+ * This MUST match your Solidity contract leaf hashing.
  */
 
 import fs from "node:fs";
@@ -29,8 +28,16 @@ const EPOCH_ID = Number(mustEnv("EPOCH_ID"));
 
 const ROOT = process.cwd();
 
-const inputCsv = path.join(ROOT, "inputs", String(CHAIN_ID), `epoch-${EPOCH_ID}.csv`);
-if (!fs.existsSync(inputCsv)) throw new Error(`Input not found: ${inputCsv}`);
+// Support both /inputs and /input (your current folder is "input")
+const inputsDir =
+  fs.existsSync(path.join(ROOT, "inputs")) ? "inputs" :
+  fs.existsSync(path.join(ROOT, "input")) ? "input" :
+  "inputs";
+
+const inputCsv = path.join(ROOT, inputsDir, String(CHAIN_ID), `epoch-${EPOCH_ID}.csv`);
+if (!fs.existsSync(inputCsv)) {
+  throw new Error(`Input not found: ${inputCsv}\n\nFix: create ${inputsDir}/${CHAIN_ID}/epoch-${EPOCH_ID}.csv`);
+}
 
 function readCsv(file) {
   const raw = fs.readFileSync(file, "utf8").trim();
@@ -64,7 +71,6 @@ function readCsv(file) {
 // ----- Merkle helpers (sorted pairs) -----
 
 function leafPacked(address, amount, generatedLoss) {
-  // MUST MATCH CONTRACT
   return keccak256(
     encodePacked(
       ["address", "uint256", "uint256"],
@@ -75,10 +81,11 @@ function leafPacked(address, amount, generatedLoss) {
 
 function hashPair(a, b) {
   // sorted pair
-  const A = a.toLowerCase();
-  const B = b.toLowerCase();
   return keccak256(
-    encodePacked(["bytes32", "bytes32"], A < B ? [a, b] : [b, a])
+    encodePacked(
+      ["bytes32", "bytes32"],
+      a.toLowerCase() < b.toLowerCase() ? [a, b] : [b, a]
+    )
   );
 }
 
@@ -169,7 +176,7 @@ const epochMeta = {
   count: rows.length,
   totalAmount: totalAmount.toString(),
   totalGeneratedLoss: totalLoss.toString(),
-  input: `inputs/${CHAIN_ID}/epoch-${EPOCH_ID}.csv`,
+  input: `${inputsDir}/${CHAIN_ID}/epoch-${EPOCH_ID}.csv`,
   generatedAt: new Date().toISOString()
 };
 

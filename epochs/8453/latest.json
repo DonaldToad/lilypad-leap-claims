@@ -1,1 +1,10 @@
-
+{
+  "chainId": 8453,
+  "epochId": 1,
+  "merkleRoot": "0x533f83c96e51e4536486c024deca2c5f6893f407878684203a484791a77ed048",
+  "count": 1,
+  "totalAmount": "0",
+  "totalGeneratedLoss": "0",
+  "input": "inputs/8453/epoch-1.csv",
+  "generatedAt": "2026-02-11T17:32:37.137Z"
+}
