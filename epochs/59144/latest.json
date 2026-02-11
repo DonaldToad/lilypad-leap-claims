@@ -1,1 +1,10 @@
-
+{
+  "chainId": 59144,
+  "epochId": 1,
+  "merkleRoot": "0x59e995a8997784c90674e66cfeb7d35d1521a876b3c23a66fb6871df7ebaa7b1",
+  "count": 2,
+  "totalAmount": "1730000000000000000",
+  "totalGeneratedLoss": "450000000000000000",
+  "input": "inputs/59144/epoch-1.csv",
+  "generatedAt": "2026-02-11T17:21:41.271Z"
+}
