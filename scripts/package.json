@@ -1,12 +1,11 @@
 {
-  "name": "lilypad-leap-claims-scripts",
+  "name": "lilypad-leap-claims",
   "private": true,
   "type": "module",
   "scripts": {
-    "gen": "node scripts/generate-claims.mjs"
+    "gen": "node scripts/gen-merkle.mjs"
   },
   "dependencies": {
-    "@openzeppelin/merkle-tree": "^1.0.7",
-    "csv-parse": "^5.6.0"
+    "viem": "^2.0.0"
   }
 }
