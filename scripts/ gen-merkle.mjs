@@ -1,28 +1,3 @@
-/inputs
-  /59144
-    epoch-1.csv
-  /8453
-    epoch-1.csv
-
-/claims
-  /59144
-    0xabc....json
-  /8453
-    0xabc....json
-
-/epochs
-  /59144
-    1.json
-    latest.json
-  /8453
-    1.json
-    latest.json
-
-/scripts
-  gen-merkle.mjs
-
-package.json
-
 #!/usr/bin/env node
 /**
  * Generates:
@@ -30,13 +5,12 @@ package.json
  *  - epochs/<chainId>/<epochId>.json  (merkleRoot, totals, counts)
  *  - epochs/<chainId>/latest.json     (points to latest epoch + merkleRoot)
  *
- * IMPORTANT:
- * Leaf hashing MUST match your Solidity contract.
+ * Leaf hashing MUST match your Solidity distributor.
  * This script uses:
  *   leaf = keccak256( abi.encodePacked(address, uint256 amount, uint256 generatedLoss) )
  *
- * If your contract uses abi.encode (not packed), or different ordering/types,
- * change `leafPacked()` accordingly.
+ * Pair hashing uses SORTED pairs (like OpenZeppelin "sorted" style):
+ *   hashPair(a,b) = keccak256(abi.encodePacked(min(a,b), max(a,b)))
  */
 
 import fs from "node:fs";
@@ -52,6 +26,9 @@ function mustEnv(name) {
 
 const CHAIN_ID = Number(mustEnv("CHAIN_ID"));
 const EPOCH_ID = Number(mustEnv("EPOCH_ID"));
+
+if (!Number.isFinite(CHAIN_ID) || CHAIN_ID <= 0) throw new Error("Bad CHAIN_ID");
+if (!Number.isFinite(EPOCH_ID) || EPOCH_ID <= 0) throw new Error("Bad EPOCH_ID");
 
 const ROOT = process.cwd();
 
@@ -74,6 +51,7 @@ function readCsv(file) {
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
     const cols = lines[i].split(",").map((s) => s.trim());
+
     const address = (cols[idxAddr] || "").toLowerCase();
     const amount = cols[idxAmt] || "0";
     const generatedLoss = cols[idxLoss] || "0";
@@ -84,13 +62,14 @@ function readCsv(file) {
 
     rows.push({ address, amount, generatedLoss });
   }
+
   return rows;
 }
 
-// ----- Merkle helpers (sorted pairs) -----
+// ---------- Merkle helpers (sorted pairs) ----------
 
 function leafPacked(address, amount, generatedLoss) {
-  // MUST MATCH CONTRACT
+  // MUST MATCH CONTRACT: keccak256(abi.encodePacked(address,uint256,uint256))
   return keccak256(
     encodePacked(
       ["address", "uint256", "uint256"],
@@ -100,10 +79,12 @@ function leafPacked(address, amount, generatedLoss) {
 }
 
 function hashPair(a, b) {
-  // sorted pair
-  return keccak256(
-    encodePacked(["bytes32", "bytes32"], a.toLowerCase() < b.toLowerCase() ? [a, b] : [b, a])
-  );
+  // sort deterministically
+  const aa = a.toLowerCase();
+  const bb = b.toLowerCase();
+  const [left, right] = aa < bb ? [a, b] : [b, a];
+
+  return keccak256(encodePacked(["bytes32", "bytes32"], [left, right]));
 }
 
 function buildTree(leaves) {
@@ -116,7 +97,7 @@ function buildTree(leaves) {
     const next = [];
     for (let i = 0; i < level.length; i += 2) {
       const left = level[i];
-      const right = i + 1 < level.length ? level[i + 1] : level[i]; // duplicate last
+      const right = i + 1 < level.length ? level[i + 1] : level[i]; // duplicate last if odd
       next.push(hashPair(left, right));
     }
     level = next;
@@ -133,9 +114,9 @@ function getProof(leaf, layers) {
   const proof = [];
   for (let level = 0; level < layers.length - 1; level++) {
     const layer = layers[level];
-    const isRightNode = idx % 2 === 1;
-    const pairIndex = isRightNode ? idx - 1 : idx + 1;
-    const sibling = pairIndex < layer.length ? layer[pairIndex] : layer[idx]; // duplicate
+    const isRight = idx % 2 === 1;
+    const pairIndex = isRight ? idx - 1 : idx + 1;
+    const sibling = pairIndex < layer.length ? layer[pairIndex] : layer[idx]; // duplicate last if odd
     proof.push(sibling);
     idx = Math.floor(idx / 2);
   }
@@ -150,15 +131,16 @@ function writeJson(file, obj) {
   fs.writeFileSync(file, JSON.stringify(obj, null, 2) + "\n", "utf8");
 }
 
+// ---------- Run ----------
+
 const rows = readCsv(inputCsv);
 
-// determinism: sort by address (important)
+// determinism: sort by address so output is stable
 rows.sort((a, b) => a.address.localeCompare(b.address));
 
 const leaves = rows.map((r) => leafPacked(r.address, r.amount, r.generatedLoss));
 const { root, layers } = buildTree(leaves);
 
-// outputs
 const claimsDir = path.join(ROOT, "claims", String(CHAIN_ID));
 const epochsDir = path.join(ROOT, "epochs", String(CHAIN_ID));
 ensureDir(claimsDir);
@@ -182,8 +164,7 @@ for (let i = 0; i < rows.length; i++) {
     proof,
   };
 
-  const outFile = path.join(claimsDir, `${r.address}.json`);
-  writeJson(outFile, out);
+  writeJson(path.join(claimsDir, `${r.address}.json`), out);
 }
 
 const epochMeta = {
@@ -201,6 +182,9 @@ writeJson(path.join(epochsDir, `${EPOCH_ID}.json`), epochMeta);
 writeJson(path.join(epochsDir, `latest.json`), { ...epochMeta });
 
 console.log(`✅ Generated ${rows.length} bundles`);
-console.log(`   root: ${root}`);
-console.log(`   claims: claims/${CHAIN_ID}/*.json`);
-console.log(`   epoch meta: epochs/${CHAIN_ID}/${EPOCH_ID}.json`);
+console.log(`   chainId: ${CHAIN_ID}`);
+console.log(`   epochId: ${EPOCH_ID}`);
+console.log(`   root:    ${root}`);
+console.log(`   claims:  claims/${CHAIN_ID}/*.json`);
+console.log(`   epoch:   epochs/${CHAIN_ID}/${EPOCH_ID}.json`);
+console.log(`   latest:  epochs/${CHAIN_ID}/latest.json`);
