@@ -5,11 +5,8 @@
  *  - epochs/<chainId>/<epochId>.json  (merkleRoot, totals, counts)
  *  - epochs/<chainId>/latest.json     (points to latest epoch + merkleRoot)
  *
- * Leaf hashing:
- *   leaf = keccak256( abi.encodePacked(address, uint256 amount, uint256 generatedLoss) )
- *
- * IMPORTANT:
- * This MUST match your Solidity contract leaf hashing.
+ * Leaf hashing MUST match Solidity:
+ *   leaf = keccak256(abi.encodePacked(address, uint256 amount, uint256 generatedLoss))
  */
 
 import fs from "node:fs";
@@ -25,18 +22,25 @@ function mustEnv(name) {
 
 const CHAIN_ID = Number(mustEnv("CHAIN_ID"));
 const EPOCH_ID = Number(mustEnv("EPOCH_ID"));
-
 const ROOT = process.cwd();
 
-// Support both /inputs and /input (your current folder is "input")
+// Accept either "inputs" or "input"
 const inputsDir =
   fs.existsSync(path.join(ROOT, "inputs")) ? "inputs" :
-  fs.existsSync(path.join(ROOT, "input")) ? "input" :
-  "inputs";
+  fs.existsSync(path.join(ROOT, "input"))  ? "input"  :
+  null;
+
+if (!inputsDir) {
+  throw new Error(`Missing inputs folder. Create "inputs/" (recommended) or "input/".`);
+}
 
 const inputCsv = path.join(ROOT, inputsDir, String(CHAIN_ID), `epoch-${EPOCH_ID}.csv`);
+
 if (!fs.existsSync(inputCsv)) {
-  throw new Error(`Input not found: ${inputCsv}\n\nFix: create ${inputsDir}/${CHAIN_ID}/epoch-${EPOCH_ID}.csv`);
+  throw new Error(
+    `Input not found: ${inputCsv}\n` +
+    `Fix: create ${inputsDir}/${CHAIN_ID}/epoch-${EPOCH_ID}.csv`
+  );
 }
 
 function readCsv(file) {
@@ -44,10 +48,11 @@ function readCsv(file) {
   const lines = raw.split(/\r?\n/).filter(Boolean);
   if (lines.length < 2) throw new Error("CSV must have header + at least 1 row");
 
-  const header = lines[0].split(",").map((s) => s.trim());
+  const header = lines[0].split(",").map((s) => s.trim().toLowerCase());
   const idxAddr = header.indexOf("address");
   const idxAmt = header.indexOf("amount");
-  const idxLoss = header.indexOf("generatedLoss");
+  const idxLoss = header.indexOf("generatedloss");
+
   if (idxAddr < 0 || idxAmt < 0 || idxLoss < 0) {
     throw new Error(`CSV header must include: address,amount,generatedLoss`);
   }
@@ -82,10 +87,7 @@ function leafPacked(address, amount, generatedLoss) {
 function hashPair(a, b) {
   // sorted pair
   return keccak256(
-    encodePacked(
-      ["bytes32", "bytes32"],
-      a.toLowerCase() < b.toLowerCase() ? [a, b] : [b, a]
-    )
+    encodePacked(["bytes32", "bytes32"], a.toLowerCase() < b.toLowerCase() ? [a, b] : [b, a])
   );
 }
 
@@ -152,8 +154,7 @@ let totalLoss = 0n;
 
 for (let i = 0; i < rows.length; i++) {
   const r = rows[i];
-  const leaf = leaves[i];
-  const proof = getProof(leaf, layers);
+  const proof = getProof(leaves[i], layers);
 
   totalAmount += BigInt(r.amount);
   totalLoss += BigInt(r.generatedLoss);
@@ -162,9 +163,10 @@ for (let i = 0; i < rows.length; i++) {
     epochId: EPOCH_ID,
     amount: r.amount,
     generatedLoss: r.generatedLoss,
-    proof
+    proof,
   };
 
+  // IMPORTANT: filename is lowercase address
   const outFile = path.join(claimsDir, `${r.address}.json`);
   writeJson(outFile, out);
 }
@@ -177,13 +179,14 @@ const epochMeta = {
   totalAmount: totalAmount.toString(),
   totalGeneratedLoss: totalLoss.toString(),
   input: `${inputsDir}/${CHAIN_ID}/epoch-${EPOCH_ID}.csv`,
-  generatedAt: new Date().toISOString()
+  generatedAt: new Date().toISOString(),
 };
 
 writeJson(path.join(epochsDir, `${EPOCH_ID}.json`), epochMeta);
 writeJson(path.join(epochsDir, `latest.json`), { ...epochMeta });
 
 console.log(`✅ Generated ${rows.length} bundles`);
+console.log(`   chain: ${CHAIN_ID} epoch: ${EPOCH_ID}`);
 console.log(`   root: ${root}`);
 console.log(`   claims: claims/${CHAIN_ID}/*.json`);
 console.log(`   epoch meta: epochs/${CHAIN_ID}/${EPOCH_ID}.json`);
